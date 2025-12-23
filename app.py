@@ -1,12 +1,14 @@
 import streamlit as st
 import cv2
-import mediapipe as mp
 import numpy as np
 import time
 import pandas as pd
 from collections import deque
 import smtplib
 from email.message import EmailMessage
+
+# 🔥 SAFE MEDIAPIPE IMPORT (CLOUD FIX)
+from mediapipe.solutions import face_mesh as mp_face_mesh
 
 # ------------------------------
 # STREAMLIT CONFIG
@@ -45,9 +47,8 @@ if "final_log" not in st.session_state:
     st.session_state.final_log = []
 
 # ------------------------------
-# MEDIAPIPE
+# MEDIAPIPE (UNCHANGED LOGIC)
 # ------------------------------
-mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     max_num_faces=5,
     refine_landmarks=True,
@@ -69,9 +70,9 @@ def eye_aspect_ratio(eye):
 # ------------------------------
 cap = cv2.VideoCapture(0)
 
-CALIBRATION_TIME = 3        # seconds
-EAR_CLOSE_RATIO = 0.80     # 🔥 FIXED
-MIN_BLINK_FRAMES = 2       # 🔥 FIXED
+CALIBRATION_TIME = 3
+EAR_CLOSE_RATIO = 0.80
+MIN_BLINK_FRAMES = 2
 BLINK_COOLDOWN = 0.3
 
 face_state = {}
@@ -89,7 +90,10 @@ while run:
 
     frame = cv2.flip(frame, 1)
     h, w, _ = frame.shape
-    results = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+    results = face_mesh.process(
+        cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    )
 
     logs_md = "## 📋 Live Face Logs\n"
     graph_frames = []
@@ -103,8 +107,6 @@ while run:
                     "baseline_ears": [],
                     "baseline": None,
                     "first_seen": time.time(),
-
-                    # 🔥 BLINK STATE
                     "blink_frames": 0,
                     "is_closed": False,
                     "blink_count": 0,
@@ -114,9 +116,6 @@ while run:
 
             state = face_state[face_id]
 
-            # ------------------------------
-            # EYES
-            # ------------------------------
             left_eye = np.array([[int(face_landmarks.landmark[i].x * w),
                                   int(face_landmarks.landmark[i].y * h)] for i in LEFT_EYE])
             right_eye = np.array([[int(face_landmarks.landmark[i].x * w),
@@ -126,7 +125,7 @@ while run:
                        eye_aspect_ratio(right_eye)) / 2
 
             state["ear_buffer"].append(raw_ear)
-            ear_value = np.mean(state["ear_buffer"])  # 🔥 SMOOTHED EAR
+            ear_value = np.mean(state["ear_buffer"])
 
             # ------------------------------
             # CALIBRATION
@@ -145,7 +144,7 @@ while run:
             baseline = state["baseline"]
 
             # ------------------------------
-            # 🔥 CORRECT BLINK DETECTION
+            # BLINK DETECTION
             # ------------------------------
             now = time.time()
             eye_closed = ear_value < baseline * EAR_CLOSE_RATIO
@@ -187,13 +186,10 @@ while run:
             cv2.polylines(frame, [left_eye], True, color, 3)
             cv2.polylines(frame, [right_eye], True, color, 3)
 
-            cx = int((left_eye[:, 0].mean() + right_eye[:, 0].mean()) / 2)
-            cy = int(max(left_eye[:, 1].max(), right_eye[:, 1].max()) + 25)
-
             cv2.putText(
                 frame,
                 f"{label} | {stress_score}/100 | Blinks: {state['blink_count']}",
-                (cx - 170, cy),
+                (30, 80 + face_id * 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6, color, 2
             )
@@ -201,10 +197,7 @@ while run:
             # ------------------------------
             # LOGGING
             # ------------------------------
-            history[face_id].append({
-                "Time": int(elapsed),
-                "Stress": stress_score
-            })
+            history[face_id].append({"Time": int(elapsed), "Stress": stress_score})
             history[face_id] = history[face_id][-60:]
 
             st.session_state.final_log.append({
